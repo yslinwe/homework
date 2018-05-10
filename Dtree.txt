@@ -1,0 +1,93 @@
+#include "opencv2/ml/ml.hpp"
+#include "opencv2/core/core.hpp"
+#include "opencv2/core/utility.hpp"
+#include <stdio.h>
+#include <string>
+#include <map>
+#include <vector>
+using namespace cv;
+using namespace cv::ml;
+
+/*
+打印训练过程计算错误
+*/
+void train_and_print_errs(Ptr<StatModel> model, const Ptr<TrainData>& data)
+{
+    bool ok = model->train(data);
+    if( !ok )
+    {
+        printf("Training failed\n");
+    }
+    else
+    {
+        printf( "train error: %f\n", model->calcError(data, false, noArray()) );
+        printf( "test error: %f\n\n", model->calcError(data, true, noArray()) );
+    }
+}
+
+int main()
+{
+//是否需要训练
+#if(0)
+    const char* filename = 0;
+    int response_idx = 0;
+    std::string typespec;
+
+    const double train_test_split_ratio = 0.6;
+
+    Ptr<TrainData> data = TrainData::loadFromCSV("train.csv", 0, response_idx, response_idx+1, typespec);
+
+    if( data.empty() )
+    {
+        printf("ERROR: File %s can not be read\n", filename);
+        return 0;
+    }
+
+    //设置学习率
+    data->setTrainTestSplitRatio(train_test_split_ratio);
+
+    printf("======DTREE=====\n");    
+    Ptr<DTrees> dtree = DTrees::create();
+    //树的最大可能深度---max depth 
+    dtree->setMaxDepth(10);
+    //每个节点最小的样本数量---min sample count
+    dtree->setMinSampleCount(2);
+    //回归树的终止标准---regression accuracy: N/A here 
+    dtree->setRegressionAccuracy(0);
+    dtree->setUseSurrogates(false);
+    //最大的分类类别(use sub-optimal algorithm for larger numbers) 
+    dtree->setMaxCategories(16);
+    //如果cvfolds>1然后修剪决策树算法建立使用K-fold交叉验证程序，其中k是等于    cvfolds。默认值是10。
+    dtree->setCVFolds(0);
+    //如果为真，更加严格的修剪树，使树更紧凑use 1SE rule => smaller tree  
+    dtree->setUse1SERule(false);
+    //如果为真，则剪枝分支将从树上物理移除。
+    dtree->setTruncatePrunedTree(false);
+    //先验类概率的数组，按类标记值排序。默认值空Mat
+    dtree->setPriors(Mat());
+    train_and_print_errs(dtree, data);
+    dtree->save("dtree_result.xml");
+
+#else
+
+    std::cout << "======TEST====="<<std::endl;
+    Ptr<DTrees> dtree2 = DTrees::load("dtree_result.xml");
+
+
+    std::vector<float>testVec;
+    /*
+0   2,2,0,0,1,1,1,2,0,1
+1   1,1,0,1,0,0,0,0,0,0
+0   0,1,0,1,1,3,0,0,0,0
+1   0,0,1,1,1,3,1,1,0,1
+     */
+    int a[10]={1,1,0,1,0,0,0,0,0,0};
+     for(int i= 0;i<10; i++)
+    testVec.push_back(a[i]);
+
+    float resultKind = dtree2->predict(testVec);
+    std::cout << "predict:"<<resultKind<<std::endl;
+#endif
+    return 0;
+}
+

@@ -1,0 +1,86 @@
+#include "opencv2/ml/ml.hpp"
+#include "opencv2/core/core.hpp"
+#include "opencv2/core/utility.hpp"
+#include <stdio.h>
+#include <string>
+#include <map>
+#include <vector>
+using namespace cv;
+using namespace cv::ml;
+
+/*
+
+
+*/
+void train_and_print_errs(Ptr<StatModel> model, const Ptr<TrainData>& data)
+{
+    bool ok = model->train(data);
+    if( !ok )
+    {
+        printf("Training failed\n");
+    }
+    else
+    {
+        printf( "train error: %f\n", model->calcError(data, false, noArray()) );
+        printf( "test error: %f\n\n", model->calcError(data, true, noArray()) );
+    }
+}
+
+int main()
+{
+//是否需要训练
+#if(0)
+    const char* filename = 0;
+    int response_idx = 0;
+    std::string typespec;
+
+    const double train_test_split_ratio = 0.6;
+
+    Ptr<TrainData> data = TrainData::loadFromCSV("train.csv", 0, response_idx, response_idx+1, typespec);
+
+    if( data.empty() )
+    {
+        printf("ERROR: File %s can not be read\n", filename);
+        return 0;
+    }
+
+    //设置学习率
+    data->setTrainTestSplitRatio(train_test_split_ratio);
+
+    printf("======DTREE=====\n");
+    Ptr<DTrees> dtree = DTrees::create();
+    dtree->setMaxDepth(10);
+    dtree->setMinSampleCount(2);
+    dtree->setRegressionAccuracy(0);
+    dtree->setUseSurrogates(false);
+    dtree->setMaxCategories(16);
+    dtree->setCVFolds(0);
+    dtree->setUse1SERule(false);
+    dtree->setTruncatePrunedTree(false);
+    dtree->setPriors(Mat());
+    train_and_print_errs(dtree, data);
+    dtree->save("dtree_result.xml");
+
+#else
+
+    std::cout << "======TEST====="<<std::endl;
+    Ptr<DTrees> dtree2 = DTrees::load("dtree_result.xml");
+
+
+    std::vector<float>testVec;
+    /*
+0   2,2,0,0,1,1,1,2,0,1
+1   1,1,0,1,0,0,0,0,0,0
+0   0,1,0,1,1,3,0,0,0,0
+1   0,0,1,1,1,3,1,1,0,1
+     */
+    int a[10]={1,1,0,1,0,0,0,0,0,0};
+     for(int i= 0;i<10; i++)
+    testVec.push_back(a[i]);
+
+    float resultKind = dtree2->predict(testVec);
+    std::cout << "predict:"<<resultKind<<std::endl;
+#endif
+    return 0;
+}
+
