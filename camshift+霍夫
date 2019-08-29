@@ -1,0 +1,163 @@
+#include<opencv2/opencv.hpp>
+#include<vector>
+#include <opencv2/core/utility.hpp>
+#include "opencv2/video/tracking.hpp"
+#include "opencv2/imgproc.hpp"
+#include "opencv2/videoio.hpp"
+#include "opencv2/highgui.hpp"
+
+#include <iostream>
+#include <ctype.h>
+
+using namespace std;
+using namespace cv;
+
+int g_CannyThred = 180, g_CannyP = 0, g_CannySize = 0, g_HoughThred = 105, g_HoughThick = 9;
+int g_Blue = 255, g_Green = 255, g_Red = 0;
+int g_nWay = 0;
+int g_nHoughLineMax = 10, g_nHoughLineMin = 50;
+
+int g_nDp = 0;
+int g_nMinDist = 5;
+int g_nMinRadius = 0, g_nMaxRadius = 0;
+
+int flag=0;
+Rect last_brect;
+
+bool showHist = true;
+Point origin;
+Rect selection;
+int vmin = 10, vmax = 256, smin = 30;
+
+Point getCenterPoint(Rect rect)
+{
+    Point cpt;
+    cpt.x = rect.x + cvRound(rect.width/2.0);
+    cpt.y = rect.y + cvRound(rect.height/2.0);
+    return cpt;
+}
+
+int main()
+{
+
+    vector<Vec3f> circles;
+
+    namedWindow("k", CV_WINDOW_AUTOSIZE);
+    cvCreateTrackbar("dp", "k", &g_nDp, 100);
+    cvCreateTrackbar("MinDist", "k", &g_nMinDist, 100);
+    cvCreateTrackbar("CannyThred", "k", &g_CannyThred, 300);
+    cvCreateTrackbar("HoughThred", "k", &g_HoughThred, 255);
+    cvCreateTrackbar("Blue", "k", &g_Blue, 255);
+    cvCreateTrackbar("Green", "k", &g_Green, 255);
+    cvCreateTrackbar("Red", "k", &g_Red, 255);
+    cvCreateTrackbar("Bgr/Gray", "k", &g_nWay, 1);
+    cvCreateTrackbar("HoughThred", "k", &g_HoughThred, 200);
+    cvCreateTrackbar("MinRadius", "k", &g_nMinRadius, 100);
+    cvCreateTrackbar("MaxRadius", "k", &g_nMaxRadius, 100);
+    cvCreateTrackbar("HoughThick", "k", &g_HoughThick, 100);
+    VideoCapture capture(0);
+    Mat srcImage;
+    char key;
+    Mat dstImage;
+    Mat dst;
+
+    Mat hsv, hue, hist, histimg = Mat::zeros(200, 320, CV_8UC3), backproj,mask;
+    Rect trackWindow;
+    int hsize = 16;
+    float hranges[] = {0,180};
+    const float* phranges = hranges;
+    Point cen;
+    Point center;
+    int radius;
+
+    while (1)
+    {   capture >> srcImage;
+
+        Mat grayImage;
+        srcImage.copyTo(dst);
+        cvtColor(dst,hsv,COLOR_BGR2HSV);
+
+        cvtColor(srcImage, grayImage, CV_BGR2GRAY);
+        GaussianBlur(grayImage, grayImage, Size(9, 9), 2, 2);
+        
+        HoughCircles(grayImage, circles, CV_HOUGH_GRADIENT, (double)((g_nDp + 1.5)), (double)g_nMinDist + 1
+                     , (double)g_CannyThred + 1, g_HoughThred + 1, g_nMinRadius, g_nMaxRadius);
+
+        /*HoughCircles(grayImage, circles, CV_HOUGH_GRADIENT, 1.5, 10, 200, 100, 0, 0);*/
+
+        if(circles.size()>0&&flag==0)
+        {for (size_t i = 0; i < circles.size(); i++)
+            {
+
+                if (g_nWay)
+                    grayImage.copyTo(dstImage);
+                else
+                    srcImage.copyTo(dstImage);
+
+                circle(srcImage, Point(cvRound(circles[i][0]), cvRound(circles[i][1])), cvRound(circles[i][2])
+                        , Scalar(g_Blue, g_Green, g_Red), g_HoughThick);
+                //cout<<cvRound(circles[i][2])<<endl;
+                center.x=cvRound(circles[i][0]);
+                center.y=cvRound(circles[i][1]);
+                radius = cvRound(circles[i][2])/2;
+                Rect rect1(center.x-radius, center.y-radius, radius,radius);
+                if((center.x-radius)>0&&radius<hsv.cols&&(center.y-radius)>0&&radius<hsv.rows)
+                {selection=rect1;
+                flag=-1;}
+}}
+
+        if(flag)
+        {
+            int _vmin = vmin, _vmax = vmax;
+
+            inRange(hsv, Scalar(0, smin, MIN(_vmin,_vmax)),
+                    Scalar(180, 256, MAX(_vmin, _vmax)), mask);
+            int ch[] = {0, 0};
+            hue.create(hsv.size(), hsv.depth());
+            mixChannels(&hsv, 1, &hue, 1, ch, 1);
+            if(flag<0)
+            {
+                // Object has been selected by user, set up CAMShift search properties once
+                Mat roi=hue(selection);
+                Mat maskroi=mask(selection);
+                calcHist(&roi, 1, 0, maskroi, hist, 1, &hsize, &phranges);
+                normalize(hist, hist, 0, 255, NORM_MINMAX);
+
+                trackWindow = selection;
+                flag = 1; // Don't set up again, unless user selects new ROI
+
+            }
+
+            // Perform CAMShift
+            calcBackProject(&hue, 1, 0, hist, backproj, &phranges);
+            backproj &= mask;
+            RotatedRect trackBox = CamShift(backproj, trackWindow,
+                                            TermCriteria( TermCriteria::EPS | TermCriteria::COUNT, 10, 1 ));
+            if( trackWindow.area() <= 1 )
+            {
+                int cols = backproj.cols, rows = backproj.rows, r = (MIN(cols, rows) + 5)/6;
+                trackWindow = Rect(trackWindow.x - r, trackWindow.y - r,
+                                   trackWindow.x + r, trackWindow.y + r) &
+                        Rect(0, 0, cols, rows);
+            }
+
+            ellipse(srcImage, trackBox, Scalar(0,0,255), 3, LINE_AA );
+
+            Rect brect = trackBox.boundingRect();
+              cen=getCenterPoint(brect);
+
+             circle(srcImage,cen,2,Scalar(0,200,255),3);
+            if(abs(brect.width-last_brect.width>50)||abs(brect.height-last_brect.height>50))
+              flag=0;
+            last_brect=brect;
+        }
+        cout<<cen<<" "<<flag<<endl;
+        imshow("i", srcImage);
+        key = waitKey(1);
+        if (key == 27)
+            break;
+    }
+
+    return 0;
+}
+
